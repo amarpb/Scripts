@@ -1,1 +1,98 @@
 
+declare @SchemaName nvarchar(max) = 'dbo';
+declare @TableName nvarchar(max) = 'AutotuneBase';
+declare @REBUILD_PAGE_LOCK_DISABLED_INDEXES_WITH_MAXDOP_1 int = 1;
+declare @MIN_INDEX_SIZE_MB int = 0;
+declare @SchemaName_Var nvarchar(max) = 'dbo';
+declare @TableName_Var nvarchar(max) = 'AutotuneBase';
+declare @IndexName nvarchar(max) = '';
+declare @AllowPageLocks int = 1;
+declare @MAXDOP int = 1;
+declare @DataCompressionToSet int = 0;
+DECLARE @SQL nvarchar(2048) = '';
+DECLARE @IndexSizeMB varchar(256) = '';
+declare @partitionNumber int = 1;
+declare @randomID varchar(256) = '';
+declare @KILL_PRIORITY nvarchar(128) = 'BLOCKERS';
+declare @FillFactor int = 0;
+declare @is_resumable int = 0;
+declare @fragmentation decimal = 0;
+
+
+
+DECLARE Index_rebuild_cursor CURSOR
+for
+SELECT schema_name(o.schema_id) AS SchemaName, 
+       object_name(s.object_id) AS TableName, 
+       i.name AS IndexName, 
+       CAST((1.0 / SUM(s.[page_count]) * SUM(s.avg_fragmentation_in_percent * s.[page_count])) AS INT) AS Fragmentation,
+       SUM(CAST(s.[page_count] AS FLOAT)) * 8 / 1024 AS IndexSizeMB,
+       CAST(sp.data_compression AS INT) AS DataCompression,
+       CAST( avg(i.fill_factor) AS INT) AS [FillFactor], 
+       s.[partition_number] AS PartitionNumber,
+       i.allow_page_locks AS AllowPageLocks,
+	   CASE WHEN STATE in (0,1) THEN 1 WHEN ISNULL(LTRIM(RTRIM(STATE)),'')='' THEN 0 ELSE 0 END as is_resumable,
+       NEWID() AS RandomId
+FROM sys.dm_db_index_physical_stats (NULL,OBJECT_ID(@SchemaName + '.' + @TableName),NULL,NULL,NULL) s
+       JOIN sys.objects o WITH (NOLOCK) ON (s.object_id = o.object_id)
+       JOIN sys.indexes i WITH (NOLOCK) ON (s.object_id = i.object_id AND
+                                                 s.index_id = i.index_id)
+       JOIN sys.dm_db_partition_stats p WITH (NOLOCK) ON (s.object_id = p.object_id AND
+                                                               s.index_id = i.index_id AND
+                                                               s.[partition_number] = p.partition_number)
+       JOIN sys.partitions sp WITH (NOLOCK) ON (s.object_id = sp.object_id AND 
+                                                 sp.index_id = i.index_id AND 
+                                                 s.index_id = sp.index_id AND 
+                                                 sp.[partition_id] = p.[partition_id])
+	  LEFT OUTER JOIN sys.index_resumable_operations irp on (s.object_id = irp.object_id AND
+												  s.index_id = irp.index_id AND
+												  i.name = irp.name)
+WHERE i.type IN (1, 2) AND -- cannot defrag non-indexes(0-heap, 1- clustered, 2-nonclustered, 3-xml)
+      s.[page_count] > 0 
+	  AND
+      object_name(s.object_id) NOT LIKE 't[0-9]%AOS%' AND -- Exclude F&O temp tables
+      OBJECT_ID(@SchemaName + '.' + @TableName) IS NOT NULL 
+	  --AND 
+     --(i.allow_page_locks = 1 OR @REBUILD_PAGE_LOCK_DISABLED_INDEXES_WITH_MAXDOP_1 = 1)
+GROUP BY o.schema_id, 
+         s.object_id, 
+         s.[partition_number],
+         i.name,
+         sp.data_compression,
+         i.fill_factor,
+         i.allow_page_locks
+		 ,
+		 irp.STATE
+--HAVING SUM(s.[page_count]) > @MIN_INDEX_SIZE_MB * 128
+OPEN Index_rebuild_cursor
+FETCH NEXT FROM  Index_rebuild_cursor into @SchemaName_Var, @TableName_Var,@IndexName,@fragmentation,@IndexSizeMB, @DataCompressionToSet,@FillFactor, @partitionNumber, @AllowPageLocks,
+@is_resumable,
+@randomID
+select @@FETCH_STATUS
+WHILE(@@FETCH_STATUS = 0)
+	BEGIN
+
+		SELECT @SQL = @SQL + N' ALTER INDEX ['+ @IndexName + N'] ' +
+                             N'ON [' + @SchemaName_Var + N'].[' + @TableName_Var + N'] ' +
+                             N'REBUILD WITH (MAXDOP = '+ CAST(@MAXDOP as nvarchar(10)) +', ' +
+                                           CHOOSE(@DataCompressionToSet+1, N'DATA_COMPRESSION = NONE, ', N'DATA_COMPRESSION = ROW, ', N'DATA_COMPRESSION = PAGE, ') + -- CHOOSE is 1 indexed
+                                           IIF(@FillFactor = 0, N'', N'FILLFACTOR = ' + CAST(@FillFactor as nvarchar(10)) + N', ') +
+                                           N'ONLINE = ON (' +
+                                           N'WAIT_AT_LOW_PRIORITY (MAX_DURATION = 10 MINUTES, ABORT_AFTER_WAIT = ' + @KILL_PRIORITY + '))' 
+										  +
+                                           IIF(@is_resumable = 1, N', RESUMABLE = ON)', N')')
+
+		
+		--EXEC(@SQL)
+
+		
+
+		FETCH NEXT FROM  Index_rebuild_cursor into @SchemaName_Var, @TableName_Var,@IndexName,@fragmentation,@IndexSizeMB, @DataCompressionToSet,@FillFactor, @partitionNumber, @AllowPageLocks,
+@is_resumable,
+@randomID
+	END
+	PRINT 'prepared statement ' + @SQL
+	EXEC (@SQL)
+	
+CLOSE Index_rebuild_cursor
+DEALLOCATE Index_rebuild_cursor
