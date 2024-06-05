@@ -1,0 +1,16 @@
+```
+https://capdamsprod.kusto.windows.net/DamsProd?query=H4sIAAAAAAAEAF2Ry27CMBBF90j8wygbgpRAH5SHqixQoRJSy6Z0jSbJAJYSG9mThKB%2bfO3wbJeeuXPP3HFGDGvDqHklcoIIcKv8x7T72m5lrkUyPTekqnxX%2fpZCyYXJUKbG76w0JjQvSbLpdNutH6h2pAlIlmt2czFxRSTBv4P0eldfO9LvX4aU3qIUR2QHSCGKoDMaxiPCTRom49FzONg8x%2bEYk0E4GDwMR5PxJp28PHVuWExYlILrJVpMAzSV4B2AN5t%2bfvWmBSsuJPWEFCwwE0fy7hdgF%2baDSsoa%2bFxrpe%2fcczIGt3%2bMvXcUGaXACop9ikxwYUBJ2tgg0OjokNDe5fKcnSnyHLWlAySqkOx3Ia7%2fxT%2ftdVPeCWMh%2fcuBA7CfddJqe1PS4KrJzm4IJ7Rf40GYKBOSUENg%2b5xR5L05P1AbaFK6AIvrUa4hvOBwls9sNi%2bA%2bvxcFnlsWZdx49kd2q1fioXYR00CAAA%3d&web=0
+
+let _startTime = ago(1d);
+let _endTime = now();
+UnionIslands('TraceEvents')
+| where env_time between (_startTime .. _endTime)
+//| where organizationId == '76b7eafd-c873-4f3b-8ac4-4406798fd952'
+| where activityName startswith  "DAMS.Autotune.initialize"
+//| where traceLevel == 'Error'
+| where message startswith "Failed to update Autotune version with exception"
+| summarize  count() by organizationId
+//| summarize count() by bin(env_time, 1d)
+//| render timechart  with (yaxis=linear , title="Count of Error to Initialize Autotune",xtitle="Date", ytitle="Number of Errors")
+
+```
