@@ -1,0 +1,44 @@
+let startTime = ago(2h);//datetime(2023-10-23 01:58:12.9906812);
+let endTime = now();//datetime(2023-10-23 02:20:12.9906812);
+cluster('fdislandsquery.centralus.kusto.windows.net').database('CAPAnalytics').CS_TraceEvents(startDate=startTime, endDate=endTime, environment="test", clusterType='IslandCluster')
+//UnionIslands('OperationEvents')
+//UnionIslands('OperationEvents')
+| where env_time between (startTime .. endTime)
+//| where activityName ==  "DAMS.QueryHintOptimizer.GetQueryHints" 
+//| where activityName startswith "DAMS"
+//| where organizationId == '4a570d3e-6b9b-4fca-9ba9-9e91a5a6c95f'
+//and activityName != 'DAMS.Startup'
+//| where customDimensions contains "databasename"
+//| where organizationId == '3ffe43ea-bc4b-ee11-94d3-00224820c644'
+//|where activityName startswith  'DAMS'
+ | where activityName in
+ (
+ // 'DAMS.Autotune.GetTunableQueries'
+ //,'DAMS.QueryHintOptimizer.GenerateRunnableQuery'
+ //,
+ 'DAMS.QueryHintOptimizer.OptimizeQueryHint'
+ //,
+ //'DAMS.QueryHintOptimizer.TuneQueries'
+ //,'DAMS.QueryHintOptimizer.GetQueryHints'
+ //,
+ //'DAMS.Autotune.CompleteQueryTuning'
+ //,'DAMS.Autotune.ExecuteAction'
+ )
+//| where organizationId == '6f1a3357-6828-4f79-bd72-3984070ae57f'
+//| where customDimensions contains "queryhints"
+//| where customDimensions contains 'axdb'
+//| where customDimensions contains "IGNORE_NONCLUSTERED_COLUMNSTORE_INDEX"
+//| where customDimensions contains "kill"
+//| where customDimensions contains "FOTLOGUSEDSPACEMORETHAN90PERCENT.SQL" and customDimensions contains "VIEW SERVER PERFORMANCE STATE permission was denied"
+//| summarize failure = countif(customDimensions contains "VIEW SERVER PERFORMANCE STATE permission was denied"), 
+//success = countif(customDimensions !contains "VIEW SERVER PERFORMANCE STATE permission was denied") by bin(env_time, 1h)
+//| where customDimensions contains "49528787"
+//| where customDimensions contains "MSR"
+//| where customDimensions contains "Optimizing query hint for queryId"
+//| where customDimensions contains "QueryHintOptimization.cs"
+//| where customDimensions contains "15"
+//| where message contains "exception"
+//| where customDimensions contains "QueryHintOptimization"
+| where customDimensions contains "BestHint"
+| project env_time,activityName, customDimensions, message,correlationId, serviceRequestId, organizationId//, message, env_cloud_location//, resultType
+| order by env_time asc
