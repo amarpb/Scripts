@@ -1,0 +1,7 @@
+CREATE EVENT SESSION [test] ON DATABASE 
+ADD EVENT sqlserver.sp_statement_completed(
+    ACTION(sqlserver.query_hash,sqlserver.session_id,sqlserver.sql_text)),
+ADD EVENT sqlserver.sql_statement_completed(
+    ACTION(sqlserver.query_hash,sqlserver.session_id,sqlserver.sql_text))
+WITH (STARTUP_STATE=OFF)
+GO
